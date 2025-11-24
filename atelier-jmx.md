@@ -1,311 +1,258 @@
-# TP Pratique : Supervision JMX avec Docker (45 min)
+# ✅ TP — Supervision Big Data via **JMX**  
+### 💻 Adapté pour environnement Windows 10/11 + Docker Desktop + Docker Compose
 
-### 🎯 Objectif du TP
-Déployer une application Java (Kafka) avec Docker Compose et la superviser via JMX avec jconsole et jmxterm.
+Ce TP est une version adaptée de l’atelier JMX afin qu’il soit **simplement exécutable sous Windows**, sans installation locale de Java, Hadoop ou Spark.  
+Tout tourne dans **Docker Compose**, même l’application exposant JMX ✅
 
 ---
 
-### 5.1 Prérequis
+## 🎯 Objectifs du TP
 
-#### Installation requise :
-- ✅ Docker Desktop pour Windows
-- ✅ JDK 11+ installé (contient jconsole)
-- ✅ jmxterm téléchargé
+À la fin de ce TP, vous serez capable de :
 
-#### Vérification :
-```bash
+✅ Activer JMX sur une application Java  
+✅ Exposer des MBeans (compteurs, latence, ressources…)  
+✅ Démarrer l’application dans Docker  
+✅ Se connecter en JMX depuis Windows (JConsole / VisualVM)  
+✅ Observer et analyser les métriques JMX en temps réel
+
+---
+
+## 1️⃣ Prérequis
+
+- Windows 10/11
+- Docker Desktop installé et démarré
+- WSL2 activé (recommandé)
+- PowerShell
+- JDK installé sur Windows **OU** JDK embarqué dans VisualVM
+
+👉 Vérifier Docker :
+
+```powershell
 docker --version
-java -version
+docker compose version
 ```
 
 ---
 
-### 5.2 Architecture du TP
+## 2️⃣ Créer le dossier du TP
 
-```
-┌─────────────────────────────────────────┐
-│         Docker Compose                  │
-│  ┌────────────────┐  ┌────────────────┐ │
-│  │   Zookeeper    │  │     Kafka      │ │
-│  │   :2181        │  │   :9092        │ │
-│  │                │  │   JMX: 9999    │ │
-│  └────────────────┘  └────────────────┘ │
-└─────────────────────────────────────────┘
-                │
-                │ JMX Port 9999
-                ▼
-         ┌─────────────┐
-         │  jconsole   │
-         │  jmxterm    │
-         └─────────────┘
+```powershell
+mkdir C:\tp-jmx
+cd C:\tp-jmx
 ```
 
 ---
 
-### 5.3 Étape 1 : Créer le projet
+## 3️⃣ Créer l’application Java exposant des métriques JMX
 
-#### Structure des fichiers
-```
-tp-jmx/
-├── docker-compose.yml
-├── jmxterm-1.0.4-uber.jar
-└── scripts/
-    └── check-kafka-metrics.jmx
+Créer `MyApp.java` :
+
+```java
+import javax.management.*;
+import java.lang.management.*;
+import java.util.Random;
+
+public class MyApp implements MyAppMBean {
+    private Random rand = new Random();
+    private int requestCount = 0;
+
+    @Override
+    public int getRequestCount() {
+        return requestCount;
+    }
+
+    @Override
+    public double getAvgLatencyMs() {
+        return rand.nextDouble() * 300;
+    }
+
+    public void run() throws Exception {
+        while (true) {
+            requestCount++;
+            Thread.sleep(2000);
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+        MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
+        MyApp app = new MyApp();
+        ObjectName name = new ObjectName("bigdata:type=MyApp");
+        mbs.registerMBean(app, name);
+        app.run();
+    }
+}
+
+interface MyAppMBean {
+    int getRequestCount();
+    double getAvgLatencyMs();
+}
 ```
 
 ---
 
-### 5.4 Étape 2 : Fichier docker-compose.yml
+## 4️⃣ Créer le Dockerfile Java
 
-Créez le fichier `docker-compose.yml` :
+Créer `Dockerfile` :
+
+```Dockerfile
+FROM eclipse-temurin:17-jdk
+
+WORKDIR /app
+COPY MyApp.java .
+
+RUN javac MyApp.java
+
+EXPOSE 9999
+
+CMD ["java",
+     "-Dcom.sun.management.jmxremote",
+     "-Dcom.sun.management.jmxremote.port=9999",
+     "-Dcom.sun.management.jmxremote.rmi.port=9999",
+     "-Dcom.sun.management.jmxremote.local.only=false",
+     "-Dcom.sun.management.jmxremote.authenticate=false",
+     "-Dcom.sun.management.jmxremote.ssl=false",
+     "-Djava.rmi.server.hostname=localhost",
+     "MyApp"]
+```
+
+✅ Ce conteneur démarre une appli Java
+✅ expose JMX en clair sur le port **9999**
+
+---
+
+## 5️⃣ Créer le `docker-compose.yml`
+
+Créer :
 
 ```yaml
-version: '3.8'
+version: "3.8"
 
 services:
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.5.0
-    container_name: zookeeper
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
+  jmx-app:
+    build: .
+    container_name: jmx-demo
+    restart: unless-stopped
     ports:
-      - "2181:2181"
-    networks:
-      - kafka-network
-
-  kafka:
-    image: confluentinc/cp-kafka:7.5.0
-    container_name: kafka
-    depends_on:
-      - zookeeper
-    ports:
-      - "9092:9092"
-      - "9999:9999"  # Port JMX
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      
-      # Configuration JMX
-      KAFKA_JMX_PORT: 9999
-      KAFKA_JMX_HOSTNAME: localhost
-      KAFKA_JMX_OPTS: >
-        -Dcom.sun.management.jmxremote
-        -Dcom.sun.management.jmxremote.authenticate=false
-        -Dcom.sun.management.jmxremote.ssl=false
-        -Dcom.sun.management.jmxremote.rmi.port=9999
-        -Djava.rmi.server.hostname=localhost
-    networks:
-      - kafka-network
-
-networks:
-  kafka-network:
-    driver: bridge
+      - "9999:9999"
 ```
 
 ---
 
-### 5.5 Étape 3 : Démarrage des conteneurs
+## 6️⃣ Lancer l’environnement
 
-```bash
-# Dans le dossier tp-jmx/
-docker-compose up -d
-
-# Vérifier que les conteneurs sont démarrés
-docker-compose ps
-
-# Voir les logs Kafka
-docker-compose logs -f kafka
+```powershell
+docker compose up -d --build
 ```
 
-**✅ Attendez 30 secondes** que Kafka soit complètement démarré.
+Vérifier :
 
-#### Vérification JMX
-```bash
-# Tester la connexion JMX
-telnet localhost 9999
-# Si connexion OK, taper Ctrl+] puis quit
+```powershell
+docker ps
+```
+
+✅ L’application est en cours d’exécution  
+✅ Elle expose des MBeans via JMX sur `localhost:9999`
+
+---
+
+## 7️⃣ Installer VisualVM (si pas déjà présent)
+
+Télécharger :  
+https://visualvm.github.io/
+
+Aucune installation Java supplémentaire requise si JDK déjà présent ✅
+
+---
+
+## 8️⃣ Se connecter en JMX depuis Windows
+
+1. Ouvrir **VisualVM**
+2. Clic droit → **Add JMX Connection**
+3. Renseigner :
+
+```
+localhost:9999
+```
+
+4. Valider ✅
+
+---
+
+## 9️⃣ Explorer les MBeans
+
+Dans VisualVM → **MBeans** → `bigdata:type=MyApp`
+
+✔ `RequestCount` augmente automatiquement  
+✔ `AvgLatencyMs` varie dans le temps
+
+📌 Ce sont des métriques typiques de supervision Big Data :
+- volume de requêtes traitées
+- latence moyenne
+- métriques système exposées via JMX
+
+---
+
+## 🔟 (Optionnel) Tester arrêt/redémarrage
+
+```powershell
+docker compose restart
+docker compose down
+```
+
+Les métriques reprennent automatiquement ✅
+
+---
+
+## 1️⃣1️⃣ Dépannage
+
+❌ Impossible de se connecter en JMX ?
+
+✅ Vérifier que le port est ouvert :
+
+```powershell
+Test-NetConnection -Port 9999 localhost
+```
+
+✅ Vérifier que le conteneur tourne :
+
+```powershell
+docker logs jmx-demo
+```
+
+✅ Vérifier que l'antivirus ne bloque pas la JVM RMI
+
+---
+
+## 1️⃣2️⃣ Nettoyage
+
+```powershell
+docker compose down
+```
+
+Supprimer le dossier :
+
+```powershell
+Remove-Item -Recurse -Force C:\tp-jmx
 ```
 
 ---
 
-### 5.6 Étape 4 : Supervision avec jconsole
+# ✅ Fin du TP 🎉
 
-#### Lancement
-```bash
-jconsole localhost:9999
-```
+Vous avez appris à :
 
-#### 📋 Exercice guidé
-
-**Mission 1 : Explorer la mémoire Heap**
-1. Cliquez sur l'onglet **"Memory"**
-2. Observez le graphique **"Heap Memory Usage"**
-3. Notez la valeur **"Used"** actuelle : _________ MB
-
-**Mission 2 : Trouver le nombre de threads**
-1. Cliquez sur l'onglet **"Threads"**
-2. Notez le **"Thread count"** : _________
-
-**Mission 3 : Explorer les MBeans Kafka**
-1. Cliquez sur l'onglet **"MBeans"**
-2. Déroulez l'arborescence : `kafka.server` → `type=BrokerTopicMetrics`
-3. Trouvez le MBean : `name=MessagesInPerSec`
-4. Consultez l'attribut **"Count"** : _________
-
-**Mission 4 : Déclencher le Garbage Collector**
-1. Restez sur l'onglet **"MBeans"**
-2. Déroulez : `java.lang` → `Memory`
-3. Cliquez sur **"Operations"**
-4. Cliquez sur le bouton **"gc"**
-5. Retournez sur l'onglet **"Memory"** et observez la baisse de "Used"
+✅ créer une application Java instrumentée  
+✅ exposer des métriques via JMX  
+✅ containeriser l’application  
+✅ accéder aux MBeans depuis Windows  
+✅ analyser les métriques en temps réel
 
 ---
 
-### 5.7 Étape 5 : Supervision avec jmxterm
+## 🚀 Pour la suite (recommandé)
 
-#### Script de surveillance
-
-Créez le fichier `scripts/check-kafka-metrics.jmx` :
-
-```bash
-# Connexion
-open localhost:9999
-
-# Mémoire Java
-echo "\n=== MEMOIRE HEAP ==="
-domain java.lang
-bean java.lang:type=Memory
-get HeapMemoryUsage
-
-# Threads
-echo "\n=== THREADS ==="
-bean java.lang:type=Threading
-get ThreadCount
-
-# Métriques Kafka
-echo "\n=== KAFKA - MESSAGES IN ==="
-domain kafka.server
-bean kafka.server:type=BrokerTopicMetrics,name=MessagesInPerSec
-get Count
-get OneMinuteRate
-
-echo "\n=== KAFKA - MESSAGES OUT ==="
-bean kafka.server:type=BrokerTopicMetrics,name=BytesOutPerSec
-get Count
-get OneMinuteRate
-
-# Déconnexion
-close
-```
-
-#### Exécution du script
-```bash
-# Windows PowerShell
-java -jar jmxterm-1.0.4-uber.jar -n -i scripts\check-kafka-metrics.jmx
-
-# Linux/Mac
-java -jar jmxterm-1.0.4-uber.jar -n -i scripts/check-kafka-metrics.jmx
-```
-
----
-
-### 5.8 Étape 6 : Générer du trafic Kafka
-
-Pour voir les métriques évoluer, créons du trafic.
-
-#### Créer un topic
-```bash
-docker exec -it kafka kafka-topics --create \
-  --topic test-jmx \
-  --bootstrap-server localhost:9092 \
-  --partitions 1 \
-  --replication-factor 1
-```
-
-#### Produire des messages
-```bash
-# Ouvrir un producer
-docker exec -it kafka kafka-console-producer \
-  --topic test-jmx \
-  --bootstrap-server localhost:9092
-  
-# Taper plusieurs messages (un par ligne) :
-> Message 1
-> Message 2
-> Message 3
-> Message 4
-> Message 5
-# Appuyer sur Ctrl+C pour quitter
-```
-
-#### Relancer le script jmxterm
-```bash
-java -jar jmxterm-1.0.4-uber.jar -n -i scripts/check-kafka-metrics.jmx
-```
-
-**✅ Observez :** Le `Count` de `MessagesInPerSec` a augmenté !
-
----
-
-### 5.9 Étape 7 : Mode interactif jmxterm
-
-```bash
-# Lancer jmxterm en mode interactif
-java -jar jmxterm-1.0.4-uber.jar
-
-# Dans jmxterm :
-$> open localhost:9999
-$> domains
-$> domain kafka.server
-$> beans
-$> bean kafka.server:type=BrokerTopicMetrics,name=MessagesInPerSec
-$> info
-$> get Count
-$> get OneMinuteRate
-$> quit
-```
-
----
-
-### 5.10 Exercice libre (10 min)
-
-#### 🎯 Mission : Trouver les métriques Under-Replicated Partitions
-
-1. **Objectif :** Trouvez le MBean qui expose le nombre de partitions sous-répliquées
-2. **Indice :** Le domaine est `kafka.server` et le type est `ReplicaManager`
-
-**Avec jconsole :**
-- Naviguez dans l'arborescence MBeans
-- Trouvez le bon MBean
-- Notez le nom complet : _________________________________
-
-**Avec jmxterm :**
-```bash
-open localhost:9999
-domain kafka.server
-beans
-# Cherchez le bean qui contient "UnderReplicated"
-bean <nom_du_bean>
-get Value
-```
-
-**✅ Solution :**
-```
-ObjectName: kafka.server:type=ReplicaManager,name=UnderReplicatedPartitions
-Attribut: Value (devrait être 0 si tout va bien)
-```
-
----
-
-### 5.11 Nettoyage
-
-```bash
-# Arrêter les conteneurs
-docker-compose down
-
-# Supprimer les volumes (optionnel)
-docker-compose down -v
-```
+- Envoyer ces métriques JMX vers Graphite ou Prometheus
+- Superviser un cluster Hadoop / Spark / Kafka
+- Ajouter alerting & dashboards via Grafana
+- Utiliser JMX Exporter ou Jolokia
