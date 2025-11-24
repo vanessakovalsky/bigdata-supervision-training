@@ -41,3 +41,8 @@
 **4. Proposez un planning de déploiement** (3 mois max)
 
 **5. Identifiez 3 risques principaux** et leurs mitigations
+
+
+## Proposition d'architecture :
+
+https://drive.google.com/file/d/1LrUnMYYGxpEMPcEneikrhT2vjtiuOTIb/view?usp=sharing
