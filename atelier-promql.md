@@ -61,7 +61,7 @@ Ce TP utilise uniquement les métriques fournies par **Node Exporter** pour prat
 ---
 
 ### Exercice 11 : Moyenne CPU sur 1 heure
-- `avg_over_time(rate(node_cpu_seconds_total[1h])) by (instance)`.
+- `avg_over_time(node_cpu_seconds_total[1h])`.
 
 ---
 
