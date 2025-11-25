@@ -60,6 +60,7 @@ docker-compose.yml
 ```
 Ajoutez :
 ```
+version: "3.9"
 services:
   prometheus:
     image: prom/prometheus:latest
