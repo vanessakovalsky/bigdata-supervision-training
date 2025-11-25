@@ -1,240 +1,134 @@
-# Atelier — Premiers pas avec PromQL (Windows + Docker Compose + Cassandra + MongoDB)
+# 🧪 TP PromQL avec Node Exporter
 
-## 🎯 Objectifs pédagogiques
-
-À la fin de ce TP, vous serez capable de :
-
-✅ Explorer des métriques avec Prometheus  
-✅ Manipuler les opérateurs et fonctions PromQL  
-✅ Créer des requêtes d’analyse et d’alerte  
-✅ Interroger les métriques d’un cluster Cassandra  
-✅ Interroger les métriques d’une base MongoDB  
-✅ Comprendre les familles de métriques : counters, gauges, histograms, summaries
+Ce TP utilise uniquement les métriques fournies par **Node Exporter** pour pratiquer PromQL.
 
 ---
 
-## ✅ Prérequis
+## Niveau 1 – Découverte des métriques
 
-✔ Windows 10 ou 11  
-✔ Docker Desktop installé et démarré  
-✔ Accès Internet  
-❌ Aucune installation de Prometheus, Cassandra, MongoDB ou exporter requise
+### Exercice 1 : Lister toutes les métriques CPU
+- Afficher toutes les métriques commençant par `node_cpu`.
 
 ---
 
-## 📁 1 — Arborescence du TP
-
-Créez un dossier de travail :
-
-```
-promql-workshop/
-│
-├── docker-compose.yml
-└── prometheus.yml
-```
+### Exercice 2 : Filtrer par état
+- Afficher uniquement le temps CPU utilisé (`mode="user"`).
 
 ---
 
-## 📜 2 — Fichier `docker-compose.yml`
-
-```yaml
-version: "3.9"
-
-services:
-
-  prometheus:
-    image: prom/prometheus
-    container_name: prometheus
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-    ports:
-      - "9090:9090"
-    networks:
-      - monitoring
-
-  node-exporter:
-    image: prom/node-exporter
-    container_name: node-exporter
-    ports:
-      - "9100:9100"
-    networks:
-      - monitoring
-
-  cassandra:
-    image: cassandra:4.1
-    container_name: cassandra
-    environment:
-      - CASSANDRA_CLUSTER_NAME=Test Cluster
-      - JVM_EXTRA_OPTS=-Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.local.only=false -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.port=7199 -Dcom.sun.management.jmxremote.rmi.port=7199 -Djava.rmi.server.hostname=cassandra
-    ports:
-      - "9042:9042"
-      - "7199:7199"   # JMX
-    networks:
-      - monitoring
-
-  cassandra-exporter:
-    image: bitnami/jmx-exporter:latest
-    container_name: cassandra-exporter
-    depends_on:
-      - cassandra
-    environment:
-      - JMX_EXPORTER_HOST=cassandra
-      - JMX_EXPORTER_PORT=7199
-    ports:
-      - "9500:9500"
-    networks:
-      - monitoring
-
-  mongodb:
-    image: mongo:7
-    container_name: mongodb
-    ports:
-      - "27017:27017"
-    networks:
-      - monitoring
-
-  mongodb-exporter:
-    image: percona/mongodb_exporter:0.40
-    container_name: mongodb-exporter
-    command:
-      - "--mongodb.uri=mongodb://mongodb:27017"
-    ports:
-      - "9216:9216"
-    networks:
-      - monitoring
-    depends_on:
-      - mongodb
-
-networks:
-  monitoring:
-```
+### Exercice 3 : Afficher le nombre de CPU par instance
+- Utiliser `count(node_cpu{mode="user"}) by (instance)`.
 
 ---
 
-## 📜 3 — Fichier `prometheus.yml`
-
-```
-global:
-  scrape_interval: 5s
-
-scrape_configs:
-
-  - job_name: "prometheus"
-    static_configs:
-      - targets: ["prometheus:9090"]
-
-  - job_name: "node"
-    static_configs:
-      - targets: ["node-exporter:9100"]
-
-  - job_name: "cassandra"
-    static_configs:
-      - targets: ["cassandra-exporter:5556"]
-
-  - job_name: "mongodb"
-    metrics_path: "/metrics"
-    static_configs:
-      - targets: ["mongodb-exporter:9216"]
-```
+### Exercice 4 : Mémoire totale et libre
+- Afficher `node_memory_MemTotal_bytes` et `node_memory_MemFree_bytes` pour toutes les instances.
 
 ---
 
-## 🚀 4 — Démarrage de l’environnement
+## Niveau 2 – Agrégations
 
-Depuis PowerShell dans le dossier :
-
-```powershell
-docker compose up -d
-```
-
-Vérifiez :
-
-```powershell
-docker ps
-```
+### Exercice 5 : Utilisation CPU totale par instance
+- Somme de toutes les modes CPU (`user`, `system`, `idle`, …) par instance.
 
 ---
 
-## 🌍 5 — Accès à Prometheus
-
-Ouvrez votre navigateur :
-
-👉 http://localhost:9090
+### Exercice 6 : Pourcentage CPU utilisé
+- Calculer `1 - (idle / total)` pour chaque instance.
 
 ---
 
-## 🔍 6 — Premiers pas en PromQL
-
-### Lister toutes les métriques
-
-```
-{__name__!=""}
-```
-
-### CPU de la machine hôte
-
-```
-rate(node_cpu_seconds_total[5m])
-```
-
-### RAM restante
-
-```
-node_memory_MemAvailable_bytes
-```
+### Exercice 7 : Mémoire utilisée par instance
+- Calculer `used = total - free` pour chaque serveur.
 
 ---
 
-## 📦 7 — PromQL et Cassandra
-
-```
-rate(cassandra_stats_clientrequest_count[1m])
-```
-
-```
-cassandra_stats_clientrequest_latencymean{scope="Read"}
-```
-
-```
-rate(cassandra_stats_clientrequest_errors[1m])
-```
+### Exercice 8 : Disque utilisé
+- Calculer l’espace disque utilisé par filesystem : `node_filesystem_size_bytes - node_filesystem_free_bytes`.
 
 ---
 
-## 🍃 8 — PromQL et MongoDB
-
-```
-rate(mongodb_ss_opcounters_total[1m])
-```
-
-```
-rate(mongodb_ss_opcounters_insert_total[1m])
-```
-
-```
-mongodb_ss_connections_current
-```
+### Exercice 9 : Top 3 systèmes les plus chargés
+- Utiliser `topk(3, rate(node_cpu_seconds_total{mode="user"}[5m]))`.
 
 ---
 
-## 🚨 9 — Exemples d’alertes
+## Niveau 3 – Fonctions temporelles
 
-```
-rate(cassandra_stats_clientrequest_latencymean[5m]) > 500
-```
-
-```
-mongodb_ss_connections_current > 200
-```
+### Exercice 10 : Taux CPU sur 5 minutes
+- Utiliser `rate(node_cpu_seconds_total{mode="user"}[5m])`.
 
 ---
 
-## 🚦 10 — Arrêter l’environnement
-
-```powershell
-docker compose down
-```
+### Exercice 11 : Moyenne CPU sur 1 heure
+- `avg_over_time(rate(node_cpu_seconds_total[1h])) by (instance)`.
 
 ---
 
-# 🎉 Fin du TP
+### Exercice 12 : Max mémoire utilisée sur 24h
+- `max_over_time((node_memory_MemTotal_bytes - node_memory_MemFree_bytes)[24h:1m]) by (instance)`.
+
+---
+
+### Exercice 13 : Écart type des lectures disque
+- `stddev_over_time(rate(node_disk_read_bytes_total[10m])) by (instance)`.
+
+---
+
+## Niveau 4 – Comparaison et ratios
+
+### Exercice 14 : Ratio lectures / écritures disque
+- `rate(node_disk_read_bytes_total[5m]) / rate(node_disk_written_bytes_total[5m])`.
+
+---
+
+### Exercice 15 : Mémoire utilisée / totale
+- `(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes`.
+
+---
+
+### Exercice 16 : Disques presque pleins
+- Afficher les filesystems avec moins de 10% d’espace libre.
+
+---
+
+### Exercice 17 : CPU vs I/O
+- Comparer `rate(node_cpu_seconds_total{mode="user"}[5m])` avec `rate(node_disk_read_bytes_total[5m])`.
+
+---
+
+## Niveau 5 – Alerting / avancé
+
+### Exercice 18 : Alerte CPU trop élevé
+- Définir une règle pour CPU `>80%` pendant 5 minutes.
+
+---
+
+### Exercice 19 : Alerte disque presque plein
+- Définir une règle si `node_filesystem_avail_bytes / node_filesystem_size_bytes < 0.1`.
+
+---
+
+### Exercice 20 : Alerting mémoire faible
+- Définir une règle si `node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.15` pendant 10 minutes.
+
+---
+
+### Astuces :
+
+- Utiliser `sum by(instance)` ou `avg by(instance)` pour agréger par serveur.  
+- Utiliser `rate()` pour métriques cumulatives comme `*_total`.  
+- Les fonctions `max_over_time`, `min_over_time`, `avg_over_time`, `stddev_over_time` sont utiles pour l’analyse temporelle.  
+
+---
+
+# 🎯 Objectif
+
+Ces exercices permettent de :
+
+1. Explorer les métriques Node Exporter.  
+2. Pratiquer les agrégations et filtres par label.  
+3. Utiliser des fonctions temporelles pour analyser des séries historiques.  
+4. Construire des alertes basiques sur CPU, mémoire et disque.  
+
+---
