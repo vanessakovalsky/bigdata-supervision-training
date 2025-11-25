@@ -64,24 +64,26 @@ services:
     image: cassandra:4.1
     container_name: cassandra
     environment:
-      - MAX_HEAP_SIZE=512M
-      - HEAP_NEWSIZE=100M
+      - CASSANDRA_CLUSTER_NAME=Test Cluster
+      - JVM_EXTRA_OPTS=-Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.local.only=false -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.port=7199 -Dcom.sun.management.jmxremote.rmi.port=7199 -Djava.rmi.server.hostname=cassandra
     ports:
       - "9042:9042"
+      - "7199:7199"   # JMX
     networks:
       - monitoring
 
   cassandra-exporter:
-    image: criteord/cassandra_exporter
+    image: bitnami/jmx-exporter:latest
     container_name: cassandra-exporter
-    ports:
-      - "8080:8080"
-    environment:
-      - CASSANDRA_HOST=cassandra
-    networks:
-      - monitoring
     depends_on:
       - cassandra
+    environment:
+      - JMX_EXPORTER_HOST=cassandra
+      - JMX_EXPORTER_PORT=7199
+    ports:
+      - "9500:9500"
+    networks:
+      - monitoring
 
   mongodb:
     image: mongo:7
@@ -126,9 +128,8 @@ scrape_configs:
       - targets: ["node-exporter:9100"]
 
   - job_name: "cassandra"
-    metrics_path: "/metrics"
     static_configs:
-      - targets: ["cassandra-exporter:8080"]
+      - targets: ["cassandra-exporter:5556"]
 
   - job_name: "mongodb"
     metrics_path: "/metrics"
