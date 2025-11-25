@@ -50,7 +50,7 @@ rate(node_cpu_seconds_total{mode="user"}[5m])
 ```
 ### Exercice 11 : Moyenne CPU sur 1 heure
 ```promql
-avg_over_time(rate(node_cpu_seconds_total{mode="user"}[1h]))
+avg_over_time(node_cpu_seconds_total{mode="user"}[1h])
 ```
 ### Exercice 12 : Max mémoire utilisée sur 24h
 ```promql
