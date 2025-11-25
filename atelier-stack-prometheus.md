@@ -4,18 +4,15 @@
 
 **Architecture cible** :
 ```
-3 Nœuds Cassandra + 3 Nœuds MongoDB + 1 HDFS
+    1 Nœuds Cassandra + 1 Nœuds MongoDB 
                     │
                     ▼
     Node Exporter (9100) sur chaque nœud
     JMX Exporter (9500) sur Cassandra
-    MongoDB Exporter (9216) sur MongoDB
-    Hadoop Exporter (9870) sur NameNode
-                    │
+    MongoDB Exporter (9216) sur MongoDB                    │
                     ▼
               Prometheus (9090)
                Scrape toutes les 15s
-              Rétention 90 jours
                     │
                     ▼
                Grafana (3000)
@@ -27,76 +24,30 @@
 `/etc/prometheus/prometheus.yml` :
 ```yaml
 global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
-  external_labels:
-    cluster: 'bigdata-prod'
-    environment: 'production'
-
-alerting:
-  alertmanagers:
-    - static_configs:
-        - targets: ['localhost:9093']
-
-rule_files:
-  - '/etc/prometheus/rules/*.yml'
+  scrape_interval: 5s
 
 scrape_configs:
-  # Prometheus self-monitoring
-  - job_name: 'prometheus'
-    static_configs:
-      - targets: ['localhost:9090']
 
-  # Node Exporters (métriques système)
-  - job_name: 'node'
+  - job_name: "prometheus"
+    scrape_interval: 15s
     static_configs:
-      - targets:
-          - 'node1:9100'
-          - 'node2:9100'
-          - 'node3:9100'
-        labels:
-          cluster: 'bigdata'
+      - targets: ["prometheus:9090"]
 
-  # Cassandra Cluster
-  - job_name: 'cassandra'
+  - job_name: "node"
+    scrape_interval: 5s
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  - job_name: "cassandra"
     scrape_interval: 30s
     static_configs:
-      - targets:
-          - 'cassandra1:9500'
-          - 'cassandra2:9500'
-          - 'cassandra3:9500'
-        labels:
-          service: 'cassandra'
-          cluster_name: 'prod-cluster'
+      - targets: ["cassandra-exporter:5556"]
 
-  # MongoDB Replica Set
-  - job_name: 'mongodb'
+  - job_name: "mongodb"
+    scrape_interval: 60s
+    metrics_path: "/metrics"
     static_configs:
-      - targets:
-          - 'mongodb1:9216'
-          - 'mongodb2:9216'
-          - 'mongodb3:9216'
-        labels:
-          service: 'mongodb'
-          replica_set: 'rs0'
-
-  # Hadoop HDFS
-  - job_name: 'hadoop-namenode'
-    static_configs:
-      - targets: ['namenode:9870']
-        labels:
-          service: 'hadoop'
-          component: 'namenode'
-
-  - job_name: 'hadoop-datanode'
-    static_configs:
-      - targets:
-          - 'datanode1:9871'
-          - 'datanode2:9871'
-          - 'datanode3:9871'
-        labels:
-          service: 'hadoop'
-          component: 'datanode'
+      - targets: ["mongodb-exporter:9216"]
 ```
 
 **Étape 2 : Règles d'alertes**
