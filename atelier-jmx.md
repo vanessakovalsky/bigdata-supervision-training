@@ -82,8 +82,11 @@ public class MyApp implements MyAppMBean {
         app.run();
     }
 }
+```
 
-interface MyAppMBean {
+Créer un fichier MyAppMBean.java :
+```
+public interface MyAppMBean {
     int getRequestCount();
     double getAvgLatencyMs();
 }
@@ -99,21 +102,13 @@ Créer `Dockerfile` :
 FROM eclipse-temurin:17-jdk
 
 WORKDIR /app
-COPY MyApp.java .
+COPY MyApp.java MyAppMBean.java .
 
-RUN javac MyApp.java
+RUN javac MyApp.java MyAppMBean.java
 
 EXPOSE 9999
 
-CMD ["java",
-     "-Dcom.sun.management.jmxremote",
-     "-Dcom.sun.management.jmxremote.port=9999",
-     "-Dcom.sun.management.jmxremote.rmi.port=9999",
-     "-Dcom.sun.management.jmxremote.local.only=false",
-     "-Dcom.sun.management.jmxremote.authenticate=false",
-     "-Dcom.sun.management.jmxremote.ssl=false",
-     "-Djava.rmi.server.hostname=localhost",
-     "MyApp"]
+CMD ["java","-Dcom.sun.management.jmxremote","-Dcom.sun.management.jmxremote.port=9999","-Dcom.sun.management.jmxremote.rmi.port=9999", "-Dcom.sun.management.jmxremote.local.only=false", "-Dcom.sun.management.jmxremote.authenticate=false", "-Dcom.sun.management.jmxremote.ssl=false", "-Djava.rmi.server.hostname=0.0.0.0", "MyApp"]
 ```
 
 ✅ Ce conteneur démarre une appli Java
