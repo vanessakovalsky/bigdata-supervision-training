@@ -1,185 +1,163 @@
-# 11. TP3 : Monitoring stack Big Data complète
+# TP Prometheus & Grafana sur Node Exporter et MongoDB
 
-**Objectif** : Déployer un monitoring complet avec Prometheus
+## Objectif
 
-**Architecture cible** :
+Découvrir Prometheus et Grafana en collectant des métriques système avec Node Exporter et des métriques MongoDB via l'exporter Percona, puis visualiser ces données sur Grafana.
+
+## Prérequis
+
+* Docker et Docker Compose installés.
+* Accès internet.
+
+## Étape 1 : Structure du projet
+
+Créez un dossier `prometheus-tp` et à l'intérieur, créez les fichiers suivants :
+
 ```
-    1 Nœuds Cassandra + 1 Nœuds MongoDB 
-                    │
-                    ▼
-    Node Exporter (9100) sur chaque nœud
-    JMX Exporter (9500) sur Cassandra
-    MongoDB Exporter (9216) sur MongoDB                    │
-                    ▼
-              Prometheus (9090)
-               Scrape toutes les 15s
-                    │
-                    ▼
-               Grafana (3000)
-            Dashboards pré-configurés
+prometheus-tp/
+  ├─ docker-compose.yml
+  ├─ prometheus.yml
 ```
 
-**Étape 1 : Configuration Prometheus complète**
+## Étape 2 : Fichier docker-compose.yml
 
-`/etc/prometheus/prometheus.yml` :
+```yaml
+version: '3.9'
+
+services:
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - '9090:9090'
+    networks:
+      - monitoring
+
+  node-exporter:
+    image: prom/node-exporter
+    container_name: node-exporter
+    ports:
+      - '9100:9100'
+    networks:
+      - monitoring
+
+  mongodb:
+    image: mongo:7
+    container_name: mongodb
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=secret
+    ports:
+      - '27017:27017'
+    networks:
+      - monitoring
+    healthcheck:
+      test: ['CMD', 'mongosh', '--username', 'admin', '--password', 'secret', '--eval', 'db.adminCommand(\'ping\')']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mongodb-exporter:
+    image: percona/mongodb_exporter:0.40
+    container_name: mongodb-exporter
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    command:
+      - '--mongodb.uri=mongodb://admin:secret@mongodb:27017/admin'
+      - '--collect-all'
+    ports:
+      - '9216:9216'
+    networks:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    ports:
+      - '3000:3000'
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    networks:
+      - monitoring
+
+networks:
+  monitoring:
+```
+
+## Étape 3 : Fichier prometheus.yml
+
 ```yaml
 global:
   scrape_interval: 5s
 
 scrape_configs:
-
-  - job_name: "prometheus"
+  - job_name: 'prometheus'
     scrape_interval: 15s
     static_configs:
-      - targets: ["prometheus:9090"]
+      - targets: ['prometheus:9090']
 
-  - job_name: "node"
+  - job_name: 'node'
     scrape_interval: 5s
     static_configs:
-      - targets: ["node-exporter:9100"]
+      - targets: ['node-exporter:9100']
 
-  - job_name: "cassandra"
-    scrape_interval: 30s
+  - job_name: 'mongodb'
+    scrape_interval: 15s
+    metrics_path: '/metrics'
     static_configs:
-      - targets: ["cassandra-exporter:5556"]
-
-  - job_name: "mongodb"
-    scrape_interval: 60s
-    metrics_path: "/metrics"
-    static_configs:
-      - targets: ["mongodb-exporter:9216"]
+      - targets: ['mongodb-exporter:9216']
 ```
 
-**Étape 2 : Règles d'alertes**
-
-`/etc/prometheus/rules/bigdata_alerts.yml` :
-```yaml
-groups:
-  - name: infrastructure
-    interval: 30s
-    rules:
-      - alert: NodeDown
-        expr: up == 0
-        for: 1m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Node {{ $labels.instance }} is down"
-          description: "{{ $labels.instance }} has been down for more than 1 minute"
-
-      - alert: HighCPU
-        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "High CPU on {{ $labels.instance }}"
-          description: "CPU usage is {{ $value }}%"
-
-      - alert: HighMemory
-        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "High memory on {{ $labels.instance }}"
-          description: "Memory usage is {{ $value }}%"
-
-      - alert: DiskSpaceLow
-        expr: (node_filesystem_avail_bytes{mountpoint="/data"} / node_filesystem_size_bytes{mountpoint="/data"}) * 100 < 10
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Low disk space on {{ $labels.instance }}"
-          description: "Only {{ $value }}% remaining"
-
-  - name: cassandra
-    interval: 30s
-    rules:
-      - alert: CassandraReadTimeouts
-        expr: rate(cassandra_client_request_timeouts_total{operation="Read"}[5m]) > 0
-        for: 2m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Cassandra read timeouts on {{ $labels.instance }}"
-          description: "{{ $value }} timeouts/sec"
-
-      - alert: CassandraHighLatency
-        expr: cassandra_client_request_read_latency_99thpercentile > 100000
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "High read latency on {{ $labels.instance }}"
-          description: "P99 latency is {{ $value }}µs"
-
-  - name: mongodb
-    interval: 30s
-    rules:
-      - alert: MongoDBReplicationLag
-        expr: mongodb_mongod_replset_oplog_lag_seconds > 10
-        for: 2m
-        labels:
-          severity: warning
-        annotations:
-          summary: "MongoDB replication lag on {{ $labels.instance }}"
-          description: "Lag is {{ $value }} seconds"
-
-      - alert: MongoDBHighConnections
-        expr: mongodb_connections{state="current"} / mongodb_connections{state="available"} > 0.8
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "High MongoDB connections on {{ $labels.instance }}"
-          description: "{{ $value | humanizePercentage }} of connections used"
-```
-
-**Étape 3 : Validation et démarrage**
+## Étape 4 : Lancer les conteneurs
 
 ```bash
-# Valider configuration
-promtool check config /etc/prometheus/prometheus.yml
-
-# Valider règles
-promtool check rules /etc/prometheus/rules/*.yml
-
-# Redémarrer Prometheus
-sudo systemctl restart prometheus
-
-# Vérifier logs
-sudo journalctl -u prometheus -f
-
-# Vérifier targets dans UI
-# http://localhost:9090/targets
-
-# Vérifier règles
-# http://localhost:9090/rules
-
-# Vérifier alertes
-# http://localhost:9090/alerts
+docker compose up -d
 ```
 
-**Étape 4 : Requêtes de validation**
+* Vérifiez que tous les conteneurs sont en `running` :
 
-```promql
-# Vérifier tous les targets UP
-count(up == 1)
-
-# Vérifier nombre de métriques par job
-count by(job) (up)
-
-# CPU moyen du cluster
-avg(100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100))
-
-# Mémoire totale cluster (GB)
-sum(node_memory_MemTotal_bytes) / 1024 / 1024 / 1024
-
-# Latence Cassandra moyenne
-avg(cassandra_client_request_read_latency_mean) / 1000
-
-# Lag réplication MongoDB
-max(mongodb_mongod_replset_oplog_lag_seconds)
+```bash
+docker compose ps
 ```
+
+## Étape 5 : Vérifier les métriques
+
+* Node Exporter : [http://localhost:9100/metrics](http://localhost:9100/metrics)
+* MongoDB Exporter : [http://localhost:9216/metrics](http://localhost:9216/metrics)
+* Prometheus : [http://localhost:9090/targets](http://localhost:9090/targets)
+
+## Étape 6 : Découverte de Grafana
+
+1. Ouvrez [http://localhost:3000](http://localhost:3000)
+2. Connectez-vous avec `admin/admin`
+3. Ajouter Prometheus comme datasource :
+
+   * URL: `http://prometheus:9090`
+4. Importer des dashboards :
+
+   * Dashboard MongoDB : ID `2589`
+   * Dashboard Node Exporter : ID `1860`
+
+## Étape 7 : Exercices Prometheus
+
+1. Afficher l'utilisation CPU de votre machine avec `node_cpu_seconds_total`
+2. Afficher la mémoire disponible avec `node_memory_MemAvailable_bytes`
+3. Compter le nombre de connections MongoDB actives avec `mongodb_up`
+4. Créer une alerte si `mongodb_up` est à 0 plus de 30s
+
+## Étape 8 : Aller plus loin (optionnel)
+
+* Ajouter la stack ELK (Elasticsearch, Logstash, Kibana) pour centraliser les logs :
+
+  * Lancer Elasticsearch : `docker run -d --name elasticsearch -p 9200:9200 -e "discovery.type=single-node" docker.elastic.co/elasticsearch/elasticsearch:8.10.0`
+  * Lancer Kibana : `docker run -d --name kibana -p 5601:5601 --link elasticsearch:elasticsearch docker.elastic.co/kibana/kibana:8.10.0`
+  * Lancer Logstash avec un fichier de config pour récupérer les logs des conteneurs
+  * Visualiser les logs et créer des dashboards Kibana
+
+---
+
+TP terminé.
