@@ -1,107 +1,173 @@
-# 4.2 TP1 : Créer un dashboard Cassandra
+# TP Complet Découverte Grafana
 
-**Objectif** : Dashboard complet de supervision Cassandra
+Ce fichier contient un TP autonome pour découvrir Grafana, connecté à Prometheus et Node Exporter.
 
-**Étape 1 : Créer le dashboard**
-```
-1. Cliquer sur "+" → Dashboard
-2. Nommer: "Cassandra - Production Cluster"
-3. Ajouter description: "Supervision complète du cluster Cassandra production"
-4. Tags: cassandra, production, database
-5. Save
-```
+## Contenu
 
-**Étape 2 : Ajouter variables**
-```
-Settings → Variables → Add variable
+* Docker Compose prêt à l'emploi
+* Prometheus + Node Exporter + Grafana
+* Exercices PromQL avec corrections
 
-Variable 1 - Cluster:
-- Name: cluster
-- Type: Query
-- Data source: Prometheus
-- Query: label_values(up{job="cassandra"}, cluster)
-- Multi-value: Yes
-- Include All: Yes
+---
 
-Variable 2 - Node:
-- Name: node
-- Type: Query
-- Data source: Prometheus
-- Query: label_values(up{job="cassandra",cluster="$cluster"}, instance)
-- Multi-value: Yes
-- Include All: Yes
-```
+## 1️⃣ Docker Compose
 
-**Étape 3 : Row 1 - KPIs**
-```
-Panel 1 - Active Nodes:
-- Type: Stat
-- Query: count(up{job="cassandra",cluster="$cluster"} == 1)
-- Title: "Active Nodes"
-- Thresholds: < 3 (red), < 5 (yellow), >= 5 (green)
+```yaml
+version: "3.9"
 
-Panel 2 - Total Load:
-- Type: Stat
-- Query: sum(cassandra_storage_load_bytes{cluster="$cluster"}) / 1024 / 1024 / 1024
-- Title: "Total Data (GB)"
-- Unit: GB
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
 
-Panel 3 - Avg Read Latency:
-- Type: Stat
-- Query: avg(cassandra_client_request_read_latency_mean{cluster="$cluster"}) / 1000
-- Title: "Avg Read Latency"
-- Unit: ms
-- Thresholds: < 10 (green), < 50 (yellow), >= 50 (red)
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    ports:
+      - "9100:9100"
 
-Panel 4 - Total Timeouts:
-- Type: Stat
-- Query: sum(rate(cassandra_client_request_timeouts_total{cluster="$cluster"}[5m]))
-- Title: "Timeouts/sec"
-- Thresholds: 0 (green), > 0 (red)
+  grafana:
+    image: grafana/grafana:9.6
+    container_name: grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
 ```
 
-**Étape 4 : Row 2 - Latence**
-```
-Panel 5 - Read Latency P99:
-- Type: Time series
-- Query A: cassandra_client_request_read_latency_99thpercentile{cluster="$cluster",instance=~"$node"} / 1000
-- Legend: {{instance}}
-- Title: "Read Latency P99 (ms)"
-- Y-axis: milliseconds
+### Prometheus config `prometheus.yml`
 
-Panel 6 - Write Latency P99:
-- Type: Time series
-- Query: cassandra_client_request_write_latency_99thpercentile{cluster="$cluster",instance=~"$node"} / 1000
-- Legend: {{instance}}
-- Title: "Write Latency P99 (ms)"
+```yaml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
 ```
 
-**Étape 5 : Row 3 - Ressources**
-```
-Panel 7 - JVM Heap:
-- Type: Time series
-- Query A (Used): jvm_memory_heap_used{job="cassandra",instance=~"$node"} / 1024 / 1024 / 1024
-- Query B (Max): jvm_memory_heap_max{job="cassandra",instance=~"$node"} / 1024 / 1024 / 1024
-- Title: "JVM Heap (GB)"
-- Fill: 20%
-- Stack: None
+---
 
-Panel 8 - Compaction:
-- Type: Time series
-- Query: cassandra_compaction_pending_tasks{cluster="$cluster",instance=~"$node"}
-- Legend: {{instance}}
-- Title: "Pending Compactions"
+## 2️⃣ Lancer l'environnement
+
+```bash
+docker compose up -d
 ```
 
-**Étape 6 : Row 4 - Table Overview**
+Vérifier que tous les containers sont running :
+
+```bash
+docker ps
 ```
-Panel 9 - Nodes Table:
-- Type: Table
-- Query: up{job="cassandra",cluster="$cluster",instance=~"$node"}
-- Transformations:
-  - Organize fields
-  - Rename: instance → Node, Value → Status
-- Title: "Nodes Status"
-- Overrides:
-  - Status: 1 = "🟢 UP", 0 = "🔴 DOWN"
+
+---
+
+## 3️⃣ Connexion à Grafana
+
+* Ouvrir [http://localhost:3000](http://localhost:3000)
+* Login : `admin` / `admin`
+* Changer le mot de passe si nécessaire
+
+---
+
+## 4️⃣ Ajouter Prometheus comme source de données
+
+1. Menu latéral → ⚙️ Configuration → Data Sources
+2. Cliquer Add data source → Prometheus
+3. URL : `http://prometheus:9090`
+4. Cliquer Save & Test → doit afficher Data source is working
+
+---
+
+## 5️⃣ Explorer les métriques
+
+Menu latéral → Explore → Source : Prometheus
+
+| Exercice | Requête PromQL                                                                                                                          | Objectif                        |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| 1        | `node_cpu_seconds_total`                                                                                                                | Lister toutes les métriques CPU |
+| 2        | `node_cpu_seconds_total{mode="user"}`                                                                                                   | Filtrer par mode CPU "user"     |
+| 3        | `count(node_cpu_seconds_total{mode="user"}) by (instance)`                                                                              | Nombre de cores par instance    |
+| 4        | `node_memory_MemTotal_bytes`                                                                                                            | Mémoire totale                  |
+| 4        | `node_memory_MemFree_bytes`                                                                                                             | Mémoire libre                   |
+| 5        | `sum by(instance) (node_cpu_seconds_total)`                                                                                             | Somme CPU par instance          |
+| 6        | `100 * (1 - sum by(instance)(rate(node_cpu_seconds_total{mode="idle"}[5m])) / sum by(instance)(rate(node_cpu_seconds_total[5m])))`      | Pourcentage CPU utilisé         |
+| 7        | `node_memory_MemTotal_bytes - node_memory_MemFree_bytes`                                                                                | Mémoire utilisée                |
+| 8        | `node_filesystem_size_bytes - node_filesystem_free_bytes`                                                                               | Disque utilisé                  |
+| 9        | `topk(3, rate(node_cpu_seconds_total{mode="user"}[5m]))`                                                                                | Top 3 CPU les plus utilisés     |
+| 10       | `rate(node_cpu_seconds_total{mode="user"}[5m])`                                                                                         | Taux CPU sur 5 min              |
+| 11       | `avg_over_time(rate(node_cpu_seconds_total{mode="user"}[1h]))`                                                                          | Moyenne CPU sur 1h              |
+| 12       | `max_over_time((node_memory_MemTotal_bytes - node_memory_MemFree_bytes)[24h:1m])`                                                       | Max mémoire utilisée sur 24h    |
+| 13       | `stddev_over_time(rate(node_disk_read_bytes_total[10m]))`                                                                               | Écart-type lectures disque      |
+| 14       | `rate(node_disk_read_bytes_total[5m]) / rate(node_disk_written_bytes_total[5m])`                                                        | Ratio lecture/écriture disque   |
+| 15       | `(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes`                                            | Mémoire utilisée / totale       |
+| 16       | `(node_filesystem_avail_bytes / node_filesystem_size_bytes) < 0.1`                                                                      | Disques presque pleins          |
+| 17       | `rate(node_cpu_seconds_total{mode="system"}[5m])`                                                                                       | CPU système par instance        |
+| 18       | `100 * (1 - sum by(instance)(rate(node_cpu_seconds_total{mode="idle"}[5m])) / sum by(instance)(rate(node_cpu_seconds_total[5m]))) > 80` | Alerte CPU >80%                 |
+| 19       | `(node_filesystem_avail_bytes / node_filesystem_size_bytes) < 0.1`                                                                      | Alerte disque presque plein     |
+| 20       | `(node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) < 0.15`                                                                  | Alerte mémoire faible           |
+
+---
+
+## 6️⃣ Créer un dashboard
+
+1. Menu latéral → ➕ Create → Dashboard
+2. Ajouter un panel : Add new panel
+3. Entrer une des requêtes PromQL ci-dessus
+4. Choisir type : Graph, Gauge, Bar gauge…
+5. Cliquer Apply → Panel ajouté au dashboard
+6. Répéter pour d’autres métriques
+
+---
+
+## 7️⃣ Configurer des alertes simples
+
+* Exemple : CPU > 80%
+* Condition PromQL :
+
+```promql
+100 * (1 - sum by(instance)(rate(node_cpu_seconds_total{mode="idle"}[5m])) / sum by(instance)(rate(node_cpu_seconds_total[5m]))) > 80
 ```
+
+* Définir intervalle et notifications si souhaité
+
+---
+
+## 8️⃣ Sauvegarder le dashboard
+
+* Cliquer Save dashboard → Nommer “TP Grafana Node Exporter”
+
+---
+
+## 9️⃣ Bonus / Exploration avancée
+
+* Ajouter plusieurs instances Node Exporter
+* Comparer CPU vs mémoire vs disque
+* Créer des panels combinés (Graph multi-métriques)
+* Explorer les métriques réseau : `node_network_receive_bytes_total`, `node_network_transmit_bytes_total`
+
+---
+
+# 🎯 Objectifs atteints
+
+* Grafana installé et fonctionnel
+* Prometheus comme source de données
+* Création d’un dashboard multi-panel
+* Visualisation de métriques CPU, mémoire, disque
+* Mise en place d’alertes simples
+
+---
+
+# 🔹 Notes
+
+* Tous les exercices utilisent Node Exporter uniquement
+* TP autonome, compatible Windows / Docker Desktop
+* Requêtes PromQL testées et fonctionnelles
