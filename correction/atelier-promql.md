@@ -58,7 +58,7 @@ max_over_time((node_memory_MemTotal_bytes - node_memory_MemFree_bytes)[24h:1m])
 ```
 ### Exercice 13 : Écart type des lectures disque
 ```promql
-stddev_over_time(rate(node_disk_read_bytes_total[10m]))
+stddev_over_time(node_disk_read_bytes_total[10m])
 ```
 ## Niveau 4 – Comparaison et ratios
 ### Exercice 14 : Ratio lectures / écritures disque
