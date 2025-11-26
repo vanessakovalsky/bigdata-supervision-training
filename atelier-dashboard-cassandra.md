@@ -80,7 +80,7 @@ docker ps
 
 ## 4️⃣ Ajouter Prometheus comme source de données
 
-1. Menu latéral → ⚙️ Configuration → Data Sources
+1. Menu latéral → ⚙️ Connexions →  Data Sources
 2. Cliquer Add data source → Prometheus
 3. URL : `http://prometheus:9090`
 4. Cliquer Save & Test → doit afficher Data source is working
