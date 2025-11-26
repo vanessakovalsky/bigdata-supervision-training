@@ -111,17 +111,13 @@ Ports exposés :
 
 ## 5️⃣ Envoyer des logs de test
 
-### Option 1 : stdin
+### stdin
 
 ```bash
 docker exec -it logstash /usr/share/logstash/bin/logstash -f /usr/share/logstash/pipeline/logstash.conf
 ```
 
 Puis saisir quelques lignes, elles seront indexées.
-
-### Option 2 : Filebeat (facultatif)
-
-On peut configurer Filebeat pour envoyer des logs vers Logstash sur le port 5044.
 
 ---
 
