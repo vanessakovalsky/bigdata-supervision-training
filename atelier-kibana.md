@@ -19,8 +19,41 @@
 
 ## 1️⃣ Préparer l’environnement Docker Compose
 
-Cloner le dépôt : https://github.com/deviantony/docker-elk
-Se rendre dans le dossier et lancer : docker-compose up -d
+* Récupérer le dépôt : https://github.com/deviantony/docker-elk
+* Modifier le fichier logstach/config/pipeline/logstash.conf et remplacer le contenu par le suivant :
+```
+input {
+	beats {
+		port => 5044
+	}
+
+	tcp {
+		port => 50000
+	}
+
+	http {
+		host => "0.0.0.0"
+		port => 8080
+	}
+}
+
+## Add your filters / logstash plugins configuration here
+
+output {
+	elasticsearch {
+		index => "logstash-demo-%{+YYYY.MM.dd}"
+		hosts => "elasticsearch:9200"
+		user => "logstash_internal"
+		password => "${LOGSTASH_INTERNAL_PASSWORD}"
+	}
+}
+```
+* 
+Se rendre dans le dossier et lancer les deux commande (l'une après l'autre) :
+```
+docker compose up setup
+ docker-compose up -d
+```
 Attendre un peu, puis accéder aux différents outils :
 ```
     http://localhost:9200 (id : elastic pass: changeme )
@@ -30,51 +63,7 @@ Attendre un peu, puis accéder aux différents outils :
     http://localhost:5601 (kibana)
 ```
 
-
-## 2️⃣ Configurer Logstash
-
-Créer un fichier `logstash.conf` :
-
-```conf
-input {
-  beats {
-    port => 5044
-  }
-  stdin {}
-}
-
-output {
-  elasticsearch {
-    hosts => ["http://elasticsearch:9200"]
-    index => "tp-logs-%{+YYYY.MM.dd}"
-  }
-  stdout { codec => rubydebug }
-}
-```
-
----
-
-## 3️⃣ Lancer l’environnement
-
-```bash
-docker compose up -d
-```
-
-Vérifier que tous les containers sont running :
-
-```bash
-docker ps
-```
-
-Ports exposés :
-
-* Elasticsearch : 9200
-* Kibana : 5601
-* Logstash : 5044
-
----
-
-## 4️⃣ Vérification des services
+## Vérification des services
 
 * Elasticsearch : `http://localhost:9200` → JSON d’état
 * Pour la première connexion à Kibana vous devez générer un token avec elasticsearch avec la commande suivante : `docker compose exec elasticsearch bin/elasticsearch-create-enrollment-token --scope kibana`
@@ -85,24 +74,23 @@ Ports exposés :
 
 ## 5️⃣ Envoyer des logs de test
 
-### stdin
-
 ```bash
-docker exec -it logstash /usr/share/logstash/bin/logstash -f /usr/share/logstash/pipeline/logstash.conf
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"msg":"hello logstash"}'
 ```
 
-Puis saisir quelques lignes, elles seront indexées.
+* Attendre quelques instants et votre message sera indexé par elasticsearch
 
----
 
-## 6️⃣ Découverte de Kibana
+## Découverte de Kibana
 
 1. Ouvrir Kibana : [http://localhost:5601](http://localhost:5601)
 2. Menu latéral → **Discover**
-3. Choisir l’index pattern `tp-logs-*`
-4. Explorer les logs envoyés via Logstash
-
----
+3. Dans Data View, cliquer sur la fleche à côté de All logs, puis cliquer sur Create a Data view
+4. Choisir l’index pattern `logstash-demo*`
+5. Cliquer sur Save Data view to Kibana
+6. Explorer les logs envoyés via Logstash
 
 ## 7️⃣ Créer un dashboard
 
