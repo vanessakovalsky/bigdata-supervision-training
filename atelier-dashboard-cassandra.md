@@ -31,7 +31,7 @@ services:
       - "9100:9100"
 
   grafana:
-    image: grafana/grafana:9.6
+    image: grafana/grafana:latest
     container_name: grafana
     environment:
       - GF_SECURITY_ADMIN_USER=admin
