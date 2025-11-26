@@ -103,6 +103,7 @@ Ports exposés :
 ## 4️⃣ Vérification des services
 
 * Elasticsearch : `http://localhost:9200` → JSON d’état
+* Pour la première connexion à Kibana vous devez générer un token avec elasticsearch avec la commande suivante : `docker compose exec elasticsearch bin/elasticsearch-create-enrollment-token --scope kibana`
 * Kibana : `http://localhost:5601` → interface web
 * Logstash : logs visibles dans `docker logs logstash`
 
