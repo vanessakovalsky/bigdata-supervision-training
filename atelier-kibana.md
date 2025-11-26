@@ -19,43 +19,17 @@
 
 ## 1️⃣ Préparer l’environnement Docker Compose
 
-Créer un fichier `docker-compose.yml` :
+Cloner le dépôt : https://github.com/deviantony/docker-elk
+Se rendre dans le dossier et lancer : docker-compose up -d
+Attendre un peu, puis accéder aux différents outils :
+```
+    http://localhost:9200 (id : elastic pass: changeme )
 
-```yaml
-version: "3.9"
+    http://localhost:5000 (logastash)
 
-services:
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
-    container_name: elasticsearch
-    environment:
-      - discovery.type=single-node
-      - ES_JAVA_OPTS=-Xms512m -Xmx512m
-    ports:
-      - "9200:9200"
-
-  logstash:
-    image: docker.elastic.co/logstash/logstash:8.11.0
-    container_name: logstash
-    volumes:
-      - ./logstash.conf:/usr/share/logstash/pipeline/logstash.conf
-    ports:
-      - "5044:5044"
-    depends_on:
-      - elasticsearch
-
-  kibana:
-    image: docker.elastic.co/kibana/kibana:8.11.0
-    container_name: kibana
-    environment:
-      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
-    ports:
-      - "5601:5601"
-    depends_on:
-      - elasticsearch
+    http://localhost:5601 (kibana)
 ```
 
----
 
 ## 2️⃣ Configurer Logstash
 
